@@ -1,8 +1,9 @@
 package example
 
-import "log"
-
 func myLog(format string, args ...interface{}) {
-	const prefix = "[my] "
-	log.Printf(prefix+format, args...)
+	leafFunc(format, args...)
+}
+
+func leafFunc(format string, args ...interface{}) {
+	// do something
 }

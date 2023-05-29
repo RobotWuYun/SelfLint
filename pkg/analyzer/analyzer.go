@@ -2,63 +2,50 @@ package analyzer
 
 import (
 	"go/ast"
-	"strings"
-
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/inspect"
+	"golang.org/x/tools/go/ast/inspector"
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "goprintffuncname",
-	Doc:  "Checks that printf-like functions are named with `f` at the end.",
-	Run:  run,
+	Name:     "selflint",
+	Doc:      "Checks func format.",
+	Run:      run,
+	Requires: []*analysis.Analyzer{inspect.Analyzer},
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
-	inspect := func(node ast.Node) bool {
-		funcDecl, ok := node.(*ast.FuncDecl)
-		if !ok {
-			return true
-		}
+	inspector := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
-		params := funcDecl.Type.Params.List
-		if len(params) != 2 { // [0] must be format (string), [1] must be args (...interface{})
-			return true
-		}
-
-		firstParamType, ok := params[0].Type.(*ast.Ident)
-		if !ok { // first param type isn't identificator so it can't be of type "string"
-			return true
-		}
-
-		if firstParamType.Name != "string" { // first param (format) type is not string
-			return true
-		}
-
-		secondParamType, ok := params[1].Type.(*ast.Ellipsis)
-		if !ok { // args are not ellipsis (...args)
-			return true
-		}
-
-		elementType, ok := secondParamType.Elt.(*ast.InterfaceType)
-		if !ok { // args are not of interface type, but we need interface{}
-			return true
-		}
-
-		if elementType.Methods != nil && len(elementType.Methods.List) != 0 {
-			return true // has >= 1 method in interface, but we need an empty interface "interface{}"
-		}
-
-		if strings.HasSuffix(funcDecl.Name.Name, "f") {
-			return true
-		}
-
-		pass.Reportf(node.Pos(), "printf-like formatting function '%s' should be named '%sf'",
-			funcDecl.Name.Name, funcDecl.Name.Name)
-		return true
+	nodeFilter := []ast.Node{
+		(*ast.FuncDecl)(nil),
 	}
 
-	for _, f := range pass.Files {
-		ast.Inspect(f, inspect)
-	}
+	inspector.Preorder(nodeFilter, func(node ast.Node) {
+		funcDecl := node.(*ast.FuncDecl)
+		checkFuncFormat(funcDecl)
+
+		if isLeafFunc(funcDecl) {
+			checkLeafFuncFormat(funcDecl)
+		}
+	})
 	return nil, nil
 }
+
+// 检查是否是叶子函数
+func isLeafFunc(funcDecl *ast.FuncDecl) bool {
+	for _, v := range funcDecl.Body.List {
+		if es, ok := v.(*ast.ExprStmt); ok {
+			if _, isFunc := es.X.(*ast.CallExpr); isFunc {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// 检查函数通用结构
+func checkLeafFuncFormat(funcDecl *ast.FuncDecl) {}
+
+// 检查叶子函数结构
+func checkFuncFormat(funcDecl *ast.FuncDecl) {}
